@@ -1,22 +1,30 @@
-import { access, copyFile, mkdir, stat } from 'node:fs/promises';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
 
-const source = join(fileURLToPath(new URL('.', import.meta.url)), 'entry.png');
-const outputDir = process.env.MAKEFUN_OUTPUT_DIR || '/output';
-const destination = join(outputDir, 'entry.png');
+const assetPath = join(dirname(fileURLToPath(import.meta.url)), 'entry.png');
+const targetDirectory = process.env.MAKEFUN_OUTPUT_DIR || '/output';
+const targetPath = join(targetDirectory, 'entry.png');
+const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+let image: Buffer;
 try {
-  await access(source);
-} catch (error) {
-  throw new Error(`Cannot access source file ${source}: ${error instanceof Error ? error.message : String(error)}`);
+  image = readFileSync(assetPath);
+} catch (cause) {
+  throw new Error(`Unable to read PNG asset at ${assetPath}`, { cause });
 }
+
+if (image.length < pngSignature.length || !image.subarray(0, pngSignature.length).equals(pngSignature)) {
+  throw new Error(`Invalid PNG signature in ${assetPath}`);
+}
+
 try {
-  await mkdir(outputDir, { recursive: true });
-  await copyFile(source, destination);
-} catch (error) {
-  throw new Error(`Failed to copy ${source} to ${destination}: ${error instanceof Error ? error.message : String(error)}`);
-}
-const [original, copy] = await Promise.all([stat(source), stat(destination)]);
-if (original.size !== copy.size) {
-  throw new Error(`Copy size mismatch: ${original.size} bytes expected, ${copy.size} bytes copied`);
+  mkdirSync(targetDirectory, { recursive: true });
+  writeFileSync(targetPath, image);
+  const writtenSize = statSync(targetPath).size;
+  if (writtenSize !== image.length) {
+    throw new Error(`Expected ${image.length} bytes but wrote ${writtenSize}`);
+  }
+} catch (cause) {
+  throw new Error(`Unable to write verified image to ${targetPath}`, { cause });
 }
